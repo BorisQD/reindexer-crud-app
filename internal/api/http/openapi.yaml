@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: Reindexer CRUD API
+  description: A complete CRUD API for items management
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+tags:
+  - name: items
+    description: Item management operations
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Verify the API and database connection status
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  version:
+                    type: string
+                    example: 2.15.0
+        '503':
+          description: API is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  error:
+                    type: string
+                    example: "database connection failed"
+
+  /items:
+    get:
+      tags:
+        - items
+      summary: Get all items
+      description: Retrieve a paginated list of all items
+      parameters:
+        - name: limit
+          in: query
+          description: Number of items to return
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Number of items to skip for pagination
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Item'
+                  total:
+                    type: integer
+                required:
+                  - items
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - items
+      summary: Create a new item
+      description: Create a new item with auto-generated UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreate'
+      responses:
+        '201':
+          description: Item created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Item created successfully
+                  data:
+                    $ref: '#/components/schemas/Item'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /items/{id}:
+    get:
+      tags:
+        - items
+      summary: Get item by ID
+      description: Retrieve a specific item by its UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Item UUID
+          schema:
+            type: string
+            format: uuid
+            example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - items
+      summary: Update item
+      description: Update an existing item by UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Item UUID
+          schema:
+            type: string
+            format: uuid
+            example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemUpdate'
+      responses:
+        '200':
+          description: Item updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Invalid UUID format or bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Item:
+      type: object
+      required:
+        - id
+        - name
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Auto-generated UUID
+        name:
+          type: string
+          description: Item name
+        created_at:
+          type: string
+          format: date-time
+          description: Item creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Item last update timestamp
+
+    ItemCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Item name
+          minLength: 1
+          maxLength: 100
+
+    ItemUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Item name
+          minLength: 1
+          maxLength: 100
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Item not found"
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully"
+        data:
+          type: object
+          description: Response data
+
+  responses:
+    NotFound:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Bad request - invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  parameters:
+    UUIDPathParameter:
+      name: id
+      in: path
+      required: true
+      description: Resource UUID
+      schema:
+        type: string
+        format: uuid
+    LimitQueryParameter:
+      name: limit
+      in: query
+      description: Number of items to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+    OffsetQueryParameter:
+      name: offset
+      in: query
+      description: Number of items to skip
+      schema:
+        type: integer
+        minimum: 0

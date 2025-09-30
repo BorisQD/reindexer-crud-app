@@ -1,0 +1,11 @@
+package: http
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+  embedded-spec: true
+output: gen.go
+output-options:
+  skip-prune: true
+compatibility:
+  always-prefix-enum-values: true
