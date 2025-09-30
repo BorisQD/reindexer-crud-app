@@ -5,6 +5,8 @@ import (
 	"crud/internal/domain"
 	"github.com/gofrs/uuid/v5"
 	"github.com/jellydator/ttlcache/v3"
+	"slices"
+	"sync"
 	"time"
 )
 
@@ -64,7 +66,14 @@ func (s Service) GetItemsPaginated(ctx context.Context, pagination domain.Pagina
 		return items, total, err
 	}
 
-	return items, total, nil
+	return processItems(items, func(item domain.Item) domain.Item {
+		it := domain.Transform(item)
+		slices.SortFunc(it.Related, func(a, b domain.Nested) int {
+			return int(b.Sort - a.Sort)
+		})
+
+		return it
+	}), total, nil
 }
 
 func (s Service) GetItem(ctx context.Context, id uuid.UUID) (domain.Item, bool, error) {
@@ -84,4 +93,37 @@ func (s Service) GetItem(ctx context.Context, id uuid.UUID) (domain.Item, bool, 
 func (s Service) UpdateItem(ctx context.Context, id uuid.UUID, item domain.Item) error {
 	item.ID = id
 	return s.db.UpdateItem(ctx, item)
+}
+
+func processItems(items []domain.Item, transform func(item domain.Item) domain.Item) []domain.Item {
+	ch := make(chan struct {
+		index int
+		value domain.Item
+	}, len(items))
+
+	var wg sync.WaitGroup
+
+	for i, item := range items {
+		wg.Add(1)
+		go func(idx int, it domain.Item) {
+			defer wg.Done()
+
+			transformed := transform(it)
+			ch <- struct {
+				index int
+				value domain.Item
+			}{idx, transformed}
+		}(i, item)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for result := range ch {
+		items[result.index] = result.value
+	}
+
+	return items
 }

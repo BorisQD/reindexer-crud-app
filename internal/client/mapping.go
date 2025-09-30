@@ -36,6 +36,7 @@ func (it Item) toModel() domain.Item {
 type Nested struct {
 	ID      string `reindex:"id"`
 	Name    string `reindex:"name"`
+	Sort    int64  `reindex:"sort"`
 	Related []Atom `reindex:"related"`
 }
 
@@ -50,6 +51,7 @@ func (nst Nested) toModel() domain.Nested {
 	return domain.Nested{
 		ID:      id,
 		Name:    nst.Name,
+		Sort:    nst.Sort,
 		Related: atoms,
 	}
 }
@@ -58,6 +60,7 @@ func nestedToDTO(n domain.Nested) Nested {
 	return Nested{
 		ID:      n.ID.String(),
 		Name:    n.Name,
+		Sort:    n.Sort,
 		Related: nil,
 	}
 }

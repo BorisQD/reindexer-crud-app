@@ -63,7 +63,7 @@ func (suite *CrudTestSuite) TearDownTest() {
 	if suite.item.Empty() {
 		return
 	}
-	_, _ = suite.client.DeleteItem(context.Background(), suite.item.ID)
+	_ = suite.client.DeleteItem(context.Background(), suite.item.ID)
 }
 
 func (suite *CrudTestSuite) TearDownSuite() {

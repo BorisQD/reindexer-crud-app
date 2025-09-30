@@ -21,6 +21,7 @@ func (it Item) Empty() bool {
 type Nested struct {
 	ID      uuid.UUID
 	Name    string
+	Sort    int64
 	Related []Atom
 }
 
@@ -39,6 +40,6 @@ type Pagination struct {
 type SortOrder string
 
 const (
-	OrderAsc  SortOrder = "ASC"
+	_         SortOrder = "ASC"
 	OrderDesc SortOrder = "DESC"
 )

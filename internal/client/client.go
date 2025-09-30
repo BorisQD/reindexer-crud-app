@@ -48,12 +48,17 @@ func (c Client) Start(ctx context.Context) error {
 }
 
 func (c Client) Stop(ctx context.Context) {
+	if !c.IsConnected(ctx) {
+		//закрытие закрытого канала под капотом Close вызовет панику
+		return
+	}
+	_ = c.CloseNamespace(c.namespace)
 	c.WithContext(ctx).Close()
 }
 
 func (c Client) IsConnected(ctx context.Context) bool {
-	status := c.WithContext(ctx).Status()
-	return status.Err == nil
+	err := c.WithContext(ctx).Ping()
+	return err == nil
 }
 
 func (c Client) CreateItem(ctx context.Context, item domain.Item) error {
@@ -69,16 +74,16 @@ func (c Client) CreateItem(ctx context.Context, item domain.Item) error {
 func (c Client) GetItem(ctx context.Context, id uuid.UUID) (domain.Item, bool, error) {
 	query := c.WithContext(ctx).Query(c.namespace).Where("id", reindexer.EQ, id.String())
 
-	it := query.Exec()
-	defer func() {
-		it.Close()
-	}()
-
 	var item domain.Item
 
+	it := query.Exec()
 	if err := it.Error(); err != nil {
 		return item, false, fmt.Errorf("client.GetItem: %w", err)
 	}
+
+	defer func() {
+		it.Close()
+	}()
 
 	if it.Count() == 0 {
 		return item, false, nil
@@ -96,13 +101,13 @@ func (c Client) GetItems(ctx context.Context, pagination domain.Pagination, orde
 		Offset(pagination.Offset)
 
 	it := query.Exec()
-	defer func() {
-		it.Close()
-	}()
-
 	if err := it.Error(); err != nil {
 		return nil, fmt.Errorf("client.GetItems: %w", err)
 	}
+
+	defer func() {
+		it.Close()
+	}()
 
 	items := make([]domain.Item, 0, it.Count())
 	for it.Next() {
@@ -114,18 +119,20 @@ func (c Client) GetItems(ctx context.Context, pagination domain.Pagination, orde
 }
 
 func (c Client) GetItemsCount(ctx context.Context) (int64, error) {
-	query := c.WithContext(ctx).Query(c.namespace)
+	query := c.WithContext(ctx).Query(c.namespace).ReqTotal()
 
 	it := query.Exec()
-	defer func() {
-		it.Close()
-	}()
-
 	if err := it.Error(); err != nil {
 		return 0, fmt.Errorf("client.GetItemsCount: %w", err)
 	}
 
-	return int64(it.Count()), nil
+	defer func() {
+		it.Close()
+	}()
+
+	res := it.AggResults()[0]
+
+	return int64(res.Value), nil
 }
 
 func (c Client) UpdateItem(ctx context.Context, item domain.Item) error {
@@ -144,15 +151,11 @@ func (c Client) UpdateItem(ctx context.Context, item domain.Item) error {
 	return nil
 }
 
-func (c Client) DeleteItem(ctx context.Context, id uuid.UUID) (found bool, err error) {
-	query := c.WithContext(ctx).Query(c.namespace).Where("id", reindexer.EQ, id)
-	deletedCount, err := query.Delete()
+func (c Client) DeleteItem(ctx context.Context, id uuid.UUID) error {
+	err := c.WithContext(ctx).Delete(c.namespace, &Item{ID: id.String()})
 	if err != nil {
-		return false, fmt.Errorf("client.DeleteItem: %w", err)
-	}
-	if deletedCount == 0 {
-		return false, nil
+		return fmt.Errorf("client.DeleteItem: %w", err)
 	}
 
-	return true, nil
+	return nil
 }
