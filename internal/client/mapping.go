@@ -54,6 +54,14 @@ func (nst Nested) toModel() domain.Nested {
 	}
 }
 
+func nestedToDTO(n domain.Nested) Nested {
+	return Nested{
+		ID:      n.ID.String(),
+		Name:    n.Name,
+		Related: nil,
+	}
+}
+
 type Atom struct {
 	ID   string `reindex:"id"`
 	Name string `reindex:"name"`
@@ -68,11 +76,16 @@ func (a Atom) toModel() domain.Atom {
 }
 
 func toDTO(it domain.Item) Item {
+	subItems := make([]Nested, 0, len(it.Related))
+	for _, nst := range it.Related {
+		subItems = append(subItems, nestedToDTO(nst))
+	}
+
 	return Item{
 		ID:        it.ID.String(),
 		Sort:      it.Sort,
 		Name:      it.Name,
-		Related:   []Nested{},
+		Related:   subItems,
 		CreatedAt: it.CreatedAt,
 		UpdatedAt: it.UpdatedAt,
 	}

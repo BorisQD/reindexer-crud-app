@@ -14,6 +14,10 @@ type Item struct {
 	UpdatedAt *time.Time
 }
 
+func (it Item) Empty() bool {
+	return it.ID == uuid.Nil
+}
+
 type Nested struct {
 	ID      uuid.UUID
 	Name    string

@@ -2,54 +2,25 @@ package app
 
 import (
 	"context"
-	api "crud/internal/api/http"
-	"crud/internal/client"
-	"crud/internal/domain"
-	"crud/internal/service"
 	"fmt"
-	"log/slog"
-	"net"
-	"net/http"
 )
 
 func Start(ctx context.Context) error {
-	db := client.New()
-	s := service.New(db)
-
 	app := New()
-	app.logger = *slog.Default()
-	app.srv = *s
+	err := app.Config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
-	server := api.NewStrictHandler(api.Server{}, nil)
+	app.Bootstrap()
 
-	r := http.NewServeMux()
+	app.logger.Info("starting app")
 
-	h := api.HandlerFromMux(server, r)
-	app.server = &http.Server{
-		Handler: h,
-		Addr:    net.JoinHostPort("0.0.0.0", "3000"),
+	if err := app.Srv.Start(ctx); err != nil {
+		return fmt.Errorf("start service: %w", err)
 	}
 
 	defer app.Shutdown()
 
-	app.logger.Info("starting app")
-
-	if err := app.srv.Start(ctx); err != nil {
-		return fmt.Errorf("start service: %w", err)
-	}
-	//return T(app)
-	return app.server.ListenAndServe()
-}
-
-func T(a *App) error {
-	if err := a.srv.CreateItem(context.Background(), domain.Item{Name: "First"}); err != nil {
-		return err
-	}
-	if items, totalCount, err := a.srv.GetItemsPaginated(context.Background(), domain.Pagination{Offset: 0, Limit: 100}); err != nil {
-		return err
-	} else {
-		a.logger.Debug(fmt.Sprintf("count: %d, first name: %s", totalCount, items[0].Name))
-	}
-
-	return nil
+	return app.Server.ListenAndServe()
 }

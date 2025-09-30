@@ -24,6 +24,13 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Atom defines model for Atom.
+type Atom struct {
+	// Id UUID
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error *string `json:"error,omitempty"`
@@ -38,7 +45,8 @@ type Item struct {
 	Id openapi_types.UUID `json:"id"`
 
 	// Name Item name
-	Name string `json:"name"`
+	Name    string    `json:"name"`
+	Related *[]Nested `json:"related,omitempty"`
 
 	// UpdatedAt Item last update timestamp
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
@@ -47,13 +55,23 @@ type Item struct {
 // ItemCreate defines model for ItemCreate.
 type ItemCreate struct {
 	// Name Item name
-	Name string `json:"name"`
+	Name    string    `json:"name"`
+	Related *[]Nested `json:"related,omitempty"`
 }
 
 // ItemUpdate defines model for ItemUpdate.
 type ItemUpdate struct {
 	// Name Item name
-	Name *string `json:"name,omitempty"`
+	Name    string   `json:"name"`
+	Related []Nested `json:"related"`
+}
+
+// Nested defines model for Nested.
+type Nested struct {
+	// Id UUID
+	Id      openapi_types.UUID `json:"id"`
+	Name    string             `json:"name"`
+	Related *[]Atom            `json:"related,omitempty"`
 }
 
 // SuccessResponse defines model for SuccessResponse.
@@ -113,6 +131,9 @@ type ServerInterface interface {
 	// Update item
 	// (PUT /items/{id})
 	PutItemsId(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Live check
+	// (GET /live)
+	GetLive(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -251,6 +272,20 @@ func (siw *ServerInterfaceWrapper) PutItemsId(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// GetLive operation middleware
+func (siw *ServerInterfaceWrapper) GetLive(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLive(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -376,6 +411,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/items", wrapper.PostItems)
 	m.HandleFunc("GET "+options.BaseURL+"/items/{id}", wrapper.GetItemsId)
 	m.HandleFunc("PUT "+options.BaseURL+"/items/{id}", wrapper.PutItemsId)
+	m.HandleFunc("GET "+options.BaseURL+"/live", wrapper.GetLive)
 
 	return m
 }
@@ -454,14 +490,11 @@ type PostItemsResponseObject interface {
 	VisitPostItemsResponse(w http.ResponseWriter) error
 }
 
-type PostItems201JSONResponse struct {
-	Data    *Item   `json:"data,omitempty"`
-	Message *string `json:"message,omitempty"`
-}
+type PostItems200JSONResponse Item
 
-func (response PostItems201JSONResponse) VisitPostItemsResponse(w http.ResponseWriter) error {
+func (response PostItems200JSONResponse) VisitPostItemsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -573,6 +606,25 @@ func (response PutItemsId500JSONResponse) VisitPutItemsIdResponse(w http.Respons
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetLiveRequestObject struct {
+}
+
+type GetLiveResponseObject interface {
+	VisitGetLiveResponse(w http.ResponseWriter) error
+}
+
+type GetLive200JSONResponse struct {
+	Status  *string `json:"status,omitempty"`
+	Version *string `json:"version,omitempty"`
+}
+
+func (response GetLive200JSONResponse) VisitGetLiveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Health check
@@ -590,6 +642,9 @@ type StrictServerInterface interface {
 	// Update item
 	// (PUT /items/{id})
 	PutItemsId(ctx context.Context, request PutItemsIdRequestObject) (PutItemsIdResponseObject, error)
+	// Live check
+	// (GET /live)
+	GetLive(ctx context.Context, request GetLiveRequestObject) (GetLiveResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -761,31 +816,56 @@ func (sh *strictHandler) PutItemsId(w http.ResponseWriter, r *http.Request, id o
 	}
 }
 
+// GetLive operation middleware
+func (sh *strictHandler) GetLive(w http.ResponseWriter, r *http.Request) {
+	var request GetLiveRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLive(ctx, request.(GetLiveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLiveResponseObject); ok {
+		if err := validResponse.VisitGetLiveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xYWY/bNhD+KwTbR9nWXt3WT83RpgaCZOvt9iVYFGNpZDMRSYUcbdZY6L8XpA5LkXxs",
-	"DicF+mZJ5MzHme+bGfqBR1pmWqEiy6cPPAMDEgmNf3oppKA/czTrq/q9ex2jjYzISGjFp/xVLhdomE6Y",
-	"IJSWkWYGKTeKB1y4Be+dAR5wBRL5lKfOKA+4jVYowdmTcC9kLvn0JAzDgEuhqseA0zpze4QiXKLhRRHw",
-	"10li8VNQ2Xci24JJe5tdUDWKcBDFzc3s+RXQageEOVqdmwiZW1s7zoBWG78i5gE3+D4XBmM+JZNjG0Oi",
-	"jQTiU57nfmWFw5IRaskLh8OgzbSy6PP1FOI5vs/RknuKtCJU/idkWSoicMAmb61D99By86PBhE/5D5MN",
-	"FyblVzv5zRht5pWT0mX3lE8hZqZ0ykZMqDtIRcyEynJiLTYVAZ8pQqMgvUZzh8YbPh7M2jmz3jtD774I",
-	"+CtNv+tcxceD8tcKmc0wEolAF7uKJR/AMqWJJR6N21ZZdA67Rp1Qjc7QkCgTj3Uw8R5kljqSzAhly16f",
-	"PM0bvXiLEfkMEcq+8cggEMb/APU57r34BUIrRkKiJZBOZg13YyAcuS99DIETQM/mk5z0aIkKjXNbq2eP",
-	"FmpJDQL0nwa25Fm8+2QpWGLlqkcfrmgr+00p9QpIK6K3W9LwzC/pJ2P/KSXcv0S1pJWvp76cNs/7QHoT",
-	"2yDd+DgcA1LP/XUeRWjtdgHEQDBYgf165j8P2JVoLSyxq5zXmWOe47NTd4qOhLYEkORpuj5ES+6VUImu",
-	"qwpEnmIoQaRuY55l2tCvldNxpOWmKTy5mrHrcgHvFY8nDSj2bH7znLnFiTZVl5OgYInS1bCAkyB/njkK",
-	"FeM9mmYHD/gdGltaPBmH49A50hkqyASf8rNxOD7jgW9WPryTFULq0vXAlzgglr/RiGTNaIUeEKjYh3wB",
-	"FlmklcLIx9MSUG65d1WGeBbzKX+B9Edp/6N+dhqGjyrLXU5U3jq5Lc+xHioGTUTa60/HJxfj8NCMf5Sq",
-	"qxkTltUui4BfhGefcZ6BIj8U5AREioMVciggudoakkeccWPF961cSjBrPuVlWlm0wuidcwBL68pMle1b",
-	"t3jimbuVWXMkI/AOGbAMlkL5lpAKS260gzQtiT9EqVn1oT3SvvlSw+v2me1Rw+yBU6tXeHV8t3DPELsD",
-	"3K6h9vaLqq9Ja/Nj19DkJ48N4cAY8IohTZC6zQMjeKe7eie3BzD2uqnkrKFMqc3wm0+jHe28QOoQvBZP",
-	"ddQi4Jm2A4opJwcGTOEHv5l9ELRiMDhVdVVzpW0jm2qmf6rj9ReLS2uwKboZdEQtevw7+Qz+1RPBIawb",
-	"HAM2o+0n9v9tk/LH5oqAnx+TfDtubN+lEHqEHhBD00gmDyIuDukm1Q0sKiWyWDNBdlgVdS+Zxfu6ic/x",
-	"J9/2N9RLzi8hOgkXo4ufo2h0fnZ5OoKLny5HIYani9PoLD6//GX/leizC/p+6RxeXs+Py6qS0y4VrIqS",
-	"x3B+RAzd+/f32mFq9nvODrSYfEBF5UWQgWJ4LywJtWzMDLeV/L8soK/TBqvL9EFt8Our1se9+jfk2zan",
-	"Aekybdhi07P+V3JfyZUitzXHonk3KLjNvwabmm1bqvNm+peV9uWOoYozLRS19lW3vOK2+DcAAP//S91f",
-	"dGYYAAA=",
+	"H4sIAAAAAAAC/+xY23LbNhN+FQz+/5KS6FPd6qpO0qaaySSuXfcm4+msyKWEhAAYYOlY4+G7dwBSFGlB",
+	"BzuJ48z0ThQXe/z2WyzveKJloRUqsnx8xwswIJHQ+Kc3Qgr6s0SzOF/+7/5O0SZGFCS04mP+tpRTNExn",
+	"TBBKy0gzg1QaxSMunMAnp4BHXIFEPua5U8ojbpM5SnD6JNwKWUo+PojjOOJSqOYx4rQo3BmhCGdoeFVF",
+	"/F2WWXyMV/ajKDb4pL3OvlNLL+KgF1dXk1fnQPMtLlyg1aVJkDnZpeECaL6yK1IecYOfSmEw5WMyJXZ9",
+	"yLSRQHzMy9JLNn5YMkLNeOX8MGgLrSz6er2A9AI/lWjJPSVaESr/E4oiFwk4x0YfrPPurmPm/wYzPub/",
+	"G62wMKrf2tFvxmhz0RipTfajfAEpM7VRNmBC3UAuUiZUURLroKmK+EQRGgX5JZobNF7x07m5NM6st87Q",
+	"m68i/lbT77pU6dO58tccmS0wEZlAl7sGJZ/BMqWJZd4bd6zR6AyekZa+P40u0JCo6y3SddQ1YNsBnSUC",
+	"79Yw1cXj+xqgXvS61aGnHzAhp6Mf6pp7uCwx3oIscnd2Qig7UUYB82tW3Jl15YlBIEz/AVrPgbfiBYRW",
+	"jIRESyCLblpSIBy4N6HchPJ6VpIezFChcWbZQ9MccNC/ChwxmDsTvsCOu3YB7i1aJ75KHRgDC/dcFun2",
+	"HOVgidVSD07TRqRE3dpcbyjoSy+yXtbd+ZJw+wbVjOZ8fHhy4sfF8vngG2bzXrgbe8K5euUz+oMHt9Ie",
+	"CrPR9BSU9PAwPVvuCnI7tV2WSYLWbia3FAiCM9/LM/86oFeitTDDPiu+KxyrOK5yweToCMbWDmRlni/2",
+	"4Un3l1CZXs4xSHzTowSRu4NlUWhDvzZGh4mWq2vI2fmEXdYCfG1cnbVOsZcXV6+YE860ae5VEhTMULqp",
+	"GXES5OO5QKFSvEXTnuARv0Fja40Hw3gYO0O6QAWF4GN+NIyHRzzy1yOf3tEcIXewv+MzDNDX32hEtmA0",
+	"R+8QqNSnfAoWWaKVwsTn0xJQabk3Vad4kvIxf430R63/3g3qMI4fdBHoY6Kx1qttHccihPc2I135w+HB",
+	"yTDet+L3SnU+YcKypckq4ifx0RfEExjgoSRnIHIMdnQoIaXamJIHxLjS4m9KpZRgFnzM67KyZI7JR2cA",
+	"ZtY1e1Ptayc8ajkkiKwLJCPwBhmwAmZC+XGfC0tumYA8r4EfgtSkedFdot5/rXVp85bwoPVpzz3Jd3gT",
+	"vhPcsTZtcW7bGnX9VbuvLeteM8LfKgN3JtIEeWcKdZe+3vjwRq73QOxly+SshUzdm/F33396vfMaqQfw",
+	"ZfM0oVYRL7QNdEx9l2PAFH72h9lnQXMGwRtzv2vOtW3bptkiX+h08dXy0rlqVv0KOqBWX4i/3fgKFKLd",
+	"Te4P+Srix08JiS2b+7OE5xrMAhBt6X10J9JqH45vNvGkBu50wQTZMFaXDD9Jd3G8r/Gjv/qsRmV2fArJ",
+	"QTwdnPycJIPjo9PDAZz8dDqIMT6cHiZH6fHpL7sv1l9Ms4+B+SbSO35aVNWYdqVgTZa8D8dP6EP/i8dz",
+	"5f0l+j1mA8RfBrqoXnMZKIa3wpJQs1ZNmOzLH7mBvs1waj4VPKfh1Hw1+r7DKdC6TBs2Xc2s/zp5vZOb",
+	"jtwyHHNxg/su1ZuX5zdOyzdanbetyY/fF8EH3s+Wi2LLpli1fwbpafXlYzXhbIejfNLXF67ugspQpYUW",
+	"ijrnGvvVdfVvAAAA///a2ZjsnBsAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

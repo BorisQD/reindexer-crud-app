@@ -14,6 +14,24 @@ tags:
     description: Health check endpoints
 
 paths:
+  /live:
+    get:
+      tags:
+        - Health
+      summary: Live check
+      description: Verify the API status
+      responses:
+        '200':
+          description: API is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  version:
+                    type: string
   /health:
     get:
       tags:
@@ -105,18 +123,12 @@ paths:
             schema:
               $ref: '#/components/schemas/ItemCreate'
       responses:
-        '201':
+        '200':
           description: Item created successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Item created successfully
-                  data:
-                    $ref: '#/components/schemas/Item'
+                $ref: '#/components/schemas/Item'
         '400':
           description: Bad request - invalid input
           content:
@@ -241,6 +253,38 @@ components:
           type: string
           format: date-time
           description: Item last update timestamp
+        related:
+          type: array
+          items:
+            $ref: '#/components/schemas/Nested'
+    Nested:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID
+        name:
+          type: string
+        related:
+          type: array
+          items:
+            $ref: '#/components/schemas/Atom'
+    Atom:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID
+        name:
+          type: string
 
     ItemCreate:
       type: object
@@ -251,7 +295,11 @@ components:
           type: string
           description: Item name
           minLength: 1
-          maxLength: 100
+          maxLength: 255
+        related:
+          type: array
+          items:
+            $ref: '#/components/schemas/Nested'
 
     ItemUpdate:
       type: object
@@ -260,7 +308,14 @@ components:
           type: string
           description: Item name
           minLength: 1
-          maxLength: 100
+          maxLength: 255
+        related:
+          type: array
+          items:
+            $ref: '#/components/schemas/Nested'
+      required:
+        - name
+        - related
 
     ErrorResponse:
       type: object

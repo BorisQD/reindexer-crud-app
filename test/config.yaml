@@ -1,0 +1,8 @@
+database:
+  host: localhost
+  port: 6534
+  name: test_db
+
+server:
+  host: localhost
+  port: 8000

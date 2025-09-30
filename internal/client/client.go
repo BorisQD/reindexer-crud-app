@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
+	"crud/internal/config"
 	"crud/internal/domain"
 	"fmt"
 	"github.com/gofrs/uuid/v5"
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/v4/bindings/cproto"
+	"net"
 )
 
 type Client struct {
@@ -14,9 +16,12 @@ type Client struct {
 	namespace string
 }
 
-func New() *Client {
-	db := reindexer.NewReindex("cproto://localhost:6534/reindexer_db", reindexer.WithCreateDBIfMissing())
-	return &Client{db, "items422"}
+func New(cfg config.DbConfig) *Client {
+	db := reindexer.NewReindex(
+		fmt.Sprintf("cproto://%s/%s", net.JoinHostPort(cfg.Host, cfg.Port), cfg.Name),
+		reindexer.WithCreateDBIfMissing(),
+	)
+	return &Client{db, cfg.Namespace}
 }
 
 func (c Client) Start(ctx context.Context) error {
@@ -44,6 +49,11 @@ func (c Client) Start(ctx context.Context) error {
 
 func (c Client) Stop(ctx context.Context) {
 	c.WithContext(ctx).Close()
+}
+
+func (c Client) IsConnected(ctx context.Context) bool {
+	status := c.WithContext(ctx).Status()
+	return status.Err == nil
 }
 
 func (c Client) CreateItem(ctx context.Context, item domain.Item) error {
@@ -132,4 +142,17 @@ func (c Client) UpdateItem(ctx context.Context, item domain.Item) error {
 	}
 
 	return nil
+}
+
+func (c Client) DeleteItem(ctx context.Context, id uuid.UUID) (found bool, err error) {
+	query := c.WithContext(ctx).Query(c.namespace).Where("id", reindexer.EQ, id)
+	deletedCount, err := query.Delete()
+	if err != nil {
+		return false, fmt.Errorf("client.DeleteItem: %w", err)
+	}
+	if deletedCount == 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
