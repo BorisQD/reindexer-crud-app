@@ -37,7 +37,7 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 Запустить приложение локально, выполнив из корня проекта:
 ```
 cp .env.example .env
-export $(grep -v '^#' .env | xargs) && go run main.go
+export $(grep -v '^#' .env | xargs) && go run cmd/main.go
 ```
 
 Или же запустить Reindexer и приложение через docker-compose setup:
